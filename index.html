@@ -1,0 +1,510 @@
+```html
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistem Manajemen Inventaris Barang (INVENTO)</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- React & React DOM -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+
+  <!-- Babel Compiler for JSX in browser -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Recharts JS library for React charts -->
+  <script src="https://cdn.jsdelivr.net/npm/recharts@2.12.7/umd/Recharts.min.js"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    body {
+      font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+    /* Hide scrollbars on custom clean scroll elements if needed */
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 antialiased">
+  <div id="root"></div>
+
+  <!-- Firebase Web SDK Modular (v11) -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // Expose Firebase modules globally so our React script can access them safely
+    window.FirebaseModule = {
+      initializeApp,
+      getAuth,
+      signInAnonymously,
+      signInWithCustomToken,
+      onAuthStateChanged,
+      getFirestore,
+      collection,
+      doc,
+      setDoc,
+      onSnapshot,
+      deleteDoc
+    };
+  </script>
+
+  <!-- Application Logic Code -->
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+    const { 
+      BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell 
+    } = window.Recharts || {};
+
+    // App Identifier for public artifact pathing
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'invento-github-default-app';
+
+    // Default Initial Data Fallbacks
+    const INITIAL_CATEGORIES = [
+      { id: 'CAT-01', name: 'Elektronik & IT', description: 'Komputer, laptop, monitor, dan perangkat pendukung' },
+      { id: 'CAT-02', name: 'Peralatan Kantor', description: 'ATK, kertas, meja, kursi, dan aksesoris kantor' },
+      { id: 'CAT-03', name: 'Perkakas & Alat Kerja', description: 'Obeng, tang, bor, mesin, dan perlengkapan teknisi' },
+      { id: 'CAT-04', name: 'Suku Cadang', description: 'Komponen pengganti untuk pemeliharaan mesin' },
+      { id: 'CAT-05', name: 'Bahan Baku', description: 'Bahan mentah untuk proses produksi' }
+    ];
+
+    const INITIAL_ITEMS = [
+      {
+        id: 'BRG-1001',
+        code: 'BRG-1001',
+        name: 'Laptop Dell Latitude 3420',
+        category: 'Elektronik & IT',
+        brand: 'Dell',
+        stock: 15,
+        minStock: 5,
+        unit: 'Unit',
+        condition: 'Baik',
+        dateAdded: '2026-01-10'
+      },
+      {
+        id: 'BRG-1002',
+        code: 'BRG-1002',
+        name: 'Monitor LG 24 Inch IPS',
+        category: 'Elektronik & IT',
+        brand: 'LG',
+        stock: 4,
+        minStock: 5,
+        unit: 'Unit',
+        condition: 'Baik',
+        dateAdded: '2026-01-15'
+      },
+      {
+        id: 'BRG-1003',
+        code: 'BRG-1003',
+        name: 'Kertas HVS A4 80gsm (Box)',
+        category: 'Peralatan Kantor',
+        brand: 'PaperOne',
+        stock: 45,
+        minStock: 10,
+        unit: 'Box',
+        condition: 'Baik',
+        dateAdded: '2026-02-01'
+      },
+      {
+        id: 'BRG-1004',
+        code: 'BRG-1004',
+        name: 'Tinta Printer Canon Black GI-790',
+        category: 'Peralatan Kantor',
+        brand: 'Canon',
+        stock: 2,
+        minStock: 5,
+        unit: 'Botol',
+        condition: 'Baik',
+        dateAdded: '2026-02-10'
+      },
+      {
+        id: 'BRG-1005',
+        code: 'BRG-1005',
+        name: 'Mesin Bor Listrik Bosch GSB 550',
+        category: 'Perkakas & Alat Kerja',
+        brand: 'Bosch',
+        stock: 0,
+        minStock: 3,
+        unit: 'Unit',
+        condition: 'Perlu Perbaikan',
+        dateAdded: '2026-02-12'
+      }
+    ];
+
+    const INITIAL_IN_TRANSACTIONS = [
+      {
+        id: 'TRX-IN-20260301-01',
+        date: '2026-03-01',
+        itemCode: 'BRG-1001',
+        itemName: 'Laptop Dell Latitude 3420',
+        quantity: 5,
+        supplier: 'PT Teknologi Mandiri',
+        officer: 'Budi Santoso'
+      }
+    ];
+
+    const INITIAL_OUT_TRANSACTIONS = [
+      {
+        id: 'TRX-OUT-20260302-01',
+        date: '2026-03-02',
+        itemCode: 'BRG-1001',
+        itemName: 'Laptop Dell Latitude 3420',
+        quantity: 2,
+        destination: 'Tim Software Engineer',
+        officer: 'Budi Santoso'
+      }
+    ];
+
+    const USERS = {
+      ADMIN: { name: 'Rian Pratama', role: 'Admin', badge: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+      GUDANG: { name: 'Ahmad Gudang', role: 'Petugas Gudang', badge: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
+      MANAGEMENT: { name: 'Siti Rahma', role: 'Manajemen', badge: 'bg-amber-100 text-amber-800 border-amber-200' }
+    };
+
+    const formatDate = (dateString) => {
+      if (!dateString) return '-';
+      const options = { year: 'numeric', month: 'long', day: 'numeric' };
+      return new Date(dateString).toLocaleDateString('id-ID', options);
+    };
+
+    // Helper SVG Icon Component
+    const Icon = ({ name, className = "w-5 h-5" }) => {
+      useEffect(() => {
+        if (window.lucide) {
+          window.lucide.createIcons();
+        }
+      }, [name]);
+      return <i data-lucide={name} class={className}></i>;
+    };
+
+    function App() {
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+      const [currentUser, setCurrentUser] = useState(USERS.ADMIN);
+
+      // Core Data States
+      const [items, setItems] = useState(INITIAL_ITEMS);
+      const [categories, setCategories] = useState(INITIAL_CATEGORIES);
+      const [inTransactions, setInTransactions] = useState(INITIAL_IN_TRANSACTIONS);
+      const [outTransactions, setOutTransactions] = useState(INITIAL_OUT_TRANSACTIONS);
+
+      // Auth & Cloud state
+      const [user, setUser] = useState(null);
+      const [isCloudConnected, setIsCloudConnected] = useState(false);
+      const [dbRefs, setDbRefs] = useState({ auth: null, db: null });
+
+      // Toast Notification
+      const [toast, setToast] = useState(null);
+      const [notifications, setNotifications] = useState([]);
+      const [showNotificationMenu, setShowNotificationMenu] = useState(false);
+
+      const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+        setTimeout(() => setToast(null), 3500);
+      };
+
+      // Initialize Firebase Firestore safely
+      useEffect(() => {
+        const initFirebase = async () => {
+          if (!window.FirebaseModule) return;
+          const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore } = window.FirebaseModule;
+
+          let firebaseConfig = null;
+          if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+            try { firebaseConfig = JSON.parse(__firebase_config); } catch (e) {}
+          } else {
+            // Default public fallback Firebase configuration for direct hosting
+            firebaseConfig = {
+              apiKey: "AIzaSyDemoKeyOnlyForFallbackInventarisApp",
+              authDomain: "invento-github-app.firebaseapp.com",
+              projectId: "invento-github-app",
+              storageBucket: "invento-github-app.appspot.com",
+              messagingSenderId: "1234567890",
+              appId: "1:1234567890:web:abcdef123456"
+            };
+          }
+
+          try {
+            const app = initializeApp(firebaseConfig);
+            const authInst = getAuth(app);
+            const dbInst = getFirestore(app);
+            setDbRefs({ auth: authInst, db: dbInst });
+
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+              await signInWithCustomToken(authInst, __initial_auth_token);
+            } else {
+              await signInAnonymously(authInst);
+            }
+
+            onAuthStateChanged(authInst, (usr) => {
+              setUser(usr);
+              if (usr) setIsCloudConnected(true);
+            });
+          } catch (e) {
+            console.warn('Firebase initialized in fallback mode or missing permissions.', e);
+          }
+        };
+
+        initFirebase();
+      }, []);
+
+      // Realtime Firestore listeners
+      useEffect(() => {
+        const { db } = dbRefs;
+        if (!user || !db || !window.FirebaseModule) return;
+        const { collection, doc, setDoc, onSnapshot } = window.FirebaseModule;
+
+        const itemsRef = collection(db, 'artifacts', appId, 'public', 'data', 'items');
+        const unsubItems = onSnapshot(itemsRef, (snapshot) => {
+          if (!snapshot.empty) {
+            const loadedItems = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+            setItems(loadedItems);
+          } else {
+            INITIAL_ITEMS.forEach(async (item) => {
+              await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', item.id), item);
+            });
+          }
+        }, (err) => console.log('Firestore listening fallback', err));
+
+        const catRef = collection(db, 'artifacts', appId, 'public', 'data', 'categories');
+        const unsubCat = onSnapshot(catRef, (snapshot) => {
+          if (!snapshot.empty) {
+            const loadedCat = snapshot.docs.map(d => ({ ...d.data(), id: d.id }));
+            setCategories(loadedCat);
+          } else {
+            INITIAL_CATEGORIES.forEach(async (cat) => {
+              await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', cat.id), cat);
+            });
+          }
+        }, (err) => console.log('Firestore listening fallback', err));
+
+        const inRef = collection(db, 'artifacts', appId, 'public', 'data', 'in_transactions');
+        const unsubIn = onSnapshot(inRef, (snapshot) => {
+          if (!snapshot.empty) {
+            setInTransactions(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
+          }
+        }, (err) => console.log('Firestore listening fallback', err));
+
+        const outRef = collection(db, 'artifacts', appId, 'public', 'data', 'out_transactions');
+        const unsubOut = onSnapshot(outRef, (snapshot) => {
+          if (!snapshot.empty) {
+            setOutTransactions(snapshot.docs.map(d => ({ ...d.data(), id: d.id })));
+          }
+        }, (err) => console.log('Firestore listening fallback', err));
+
+        return () => {
+          unsubItems();
+          unsubCat();
+          unsubIn();
+          unsubOut();
+        };
+      }, [user, dbRefs]);
+
+      // Cloud / Local CRUD Helpers
+      const saveItemToCloud = async (itemData) => {
+        const { db } = dbRefs;
+        if (user && db && window.FirebaseModule) {
+          const { doc, setDoc } = window.FirebaseModule;
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', itemData.id), itemData);
+        } else {
+          setItems(prev => {
+            const exists = prev.some(i => i.id === itemData.id);
+            if (exists) return prev.map(i => i.id === itemData.id ? itemData : i);
+            return [itemData, ...prev];
+          });
+        }
+      };
+
+      const deleteItemFromCloud = async (id) => {
+        const { db } = dbRefs;
+        if (user && db && window.FirebaseModule) {
+          const { doc, deleteDoc } = window.FirebaseModule;
+          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', id));
+        } else {
+          setItems(prev => prev.filter(i => i.id !== id));
+        }
+      };
+
+      const saveInTransactionToCloud = async (tx, updatedItem) => {
+        const { db } = dbRefs;
+        if (user && db && window.FirebaseModule) {
+          const { doc, setDoc } = window.FirebaseModule;
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'in_transactions', tx.id), tx);
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', updatedItem.id), updatedItem);
+        } else {
+          setInTransactions(prev => [tx, ...prev]);
+          setItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+        }
+      };
+
+      const saveOutTransactionToCloud = async (tx, updatedItem) => {
+        const { db } = dbRefs;
+        if (user && db && window.FirebaseModule) {
+          const { doc, setDoc } = window.FirebaseModule;
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'out_transactions', tx.id), tx);
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'items', updatedItem.id), updatedItem);
+        } else {
+          setOutTransactions(prev => [tx, ...prev]);
+          setItems(prev => prev.map(i => i.id === updatedItem.id ? updatedItem : i));
+        }
+      };
+
+      const saveCategoryToCloud = async (catData) => {
+        const { db } = dbRefs;
+        if (user && db && window.FirebaseModule) {
+          const { doc, setDoc } = window.FirebaseModule;
+          await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'categories', catData.id), catData);
+        } else {
+          setCategories(prev => [...prev, catData]);
+        }
+      };
+
+      const getItemStatus = (item) => {
+        if (item.stock <= 0) return { label: 'Habis', color: 'bg-rose-100 text-rose-800 border-rose-200', type: 'danger' };
+        if (item.stock <= item.minStock) return { label: 'Stok Menipis', color: 'bg-amber-100 text-amber-800 border-amber-200', type: 'warning' };
+        return { label: 'Tersedia', color: 'bg-emerald-100 text-emerald-800 border-emerald-200', type: 'success' };
+      };
+
+      // Recalculate Alerts
+      useEffect(() => {
+        const alerts = [];
+        items.forEach(item => {
+          if (item.stock <= 0) {
+            alerts.push({
+              id: `alert-out-${item.id}`,
+              title: 'Stok Habis!',
+              message: `${item.name} (${item.code}) saat ini HABIS!`,
+              type: 'danger'
+            });
+          } else if (item.stock <= item.minStock) {
+            alerts.push({
+              id: `alert-low-${item.id}`,
+              title: 'Stok Menipis',
+              message: `${item.name} sisa ${item.stock} ${item.unit} (Di bawah min. ${item.minStock})`,
+              type: 'warning'
+            });
+          }
+        });
+        setNotifications(alerts);
+      }, [items]);
+
+      const metrics = useMemo(() => {
+        const totalTypes = items.length;
+        const totalStock = items.reduce((acc, item) => acc + Number(item.stock), 0);
+        const lowStockCount = items.filter(item => item.stock > 0 && item.stock <= item.minStock).length;
+        const outOfStockCount = items.filter(item => item.stock <= 0).length;
+        const inThisMonth = inTransactions.reduce((acc, t) => acc + Number(t.quantity), 0);
+        const outThisMonth = outTransactions.reduce((acc, t) => acc + Number(t.quantity), 0);
+
+        return {
+          totalTypes,
+          totalStock,
+          lowStockCount: lowStockCount + outOfStockCount,
+          outOfStockCount,
+          inThisMonth,
+          outThisMonth
+        };
+      }, [items, inTransactions, outTransactions]);
+
+      const categoryChartData = useMemo(() => {
+        const map = {};
+        items.forEach(item => {
+          map[item.category] = (map[item.category] || 0) + Number(item.stock);
+        });
+        return Object.keys(map).map(cat => ({ name: cat, total: map[cat] }));
+      }, [items]);
+
+      const monthlyFlowChartData = [
+        { month: 'Okt', Masuk: 45, Keluar: 30 },
+        { month: 'Nov', Masuk: 60, Keluar: 40 },
+        { month: 'Des', Masuk: 80, Keluar: 65 },
+        { month: 'Jan', Masuk: 55, Keluar: 50 },
+        { month: 'Feb', Masuk: 70, Keluar: 55 },
+        { month: 'Mar', Masuk: metrics.inThisMonth + 15, Keluar: metrics.outThisMonth + 10 },
+      ];
+
+      const CHART_COLORS = ['#1e40af', '#0d9488', '#d97706', '#6366f1', '#ec4899'];
+
+      const NavItem = ({ id, label, icon, badge }) => {
+        const isActive = activeTab === id;
+        return (
+          <button
+            onClick={() => {
+              setActiveTab(id);
+              setMobileMenuOpen(false);
+            }}
+            className={`w-full flex items-center justify-between px-4 py-3 rounded-xl font-medium text-sm transition-all duration-200 ${
+              isActive
+                ? 'bg-blue-900 text-white shadow-md'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <Icon name={icon} className={`w-5 h-5 ${isActive ? 'text-blue-300' : 'text-slate-400'}`} />
+              <span>{label}</span>
+            </div>
+            {badge !== undefined && badge > 0 && (
+              <span className={`px-2 py-0.5 text-xs font-bold rounded-full ${isActive ? 'bg-amber-400 text-slate-900' : 'bg-rose-500 text-white'}`}>
+                {badge}
+              </span>
+            )}
+          </button>
+        );
+      };
+
+      return (
+        <div className="min-h-screen bg-slate-50 font-sans text-slate-800 flex flex-col md:flex-row">
+          
+          {/* TOAST NOTIFICATION */}
+          {toast && (
+            <div className="fixed top-5 right-5 z-50 flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-2xl bg-slate-900 text-white border border-slate-700 animate-bounce">
+              <Icon name={toast.type === 'success' ? 'check-circle' : 'alert-triangle'} className={`w-5 h-5 ${toast.type === 'success' ? 'text-emerald-400' : 'text-rose-400'}`} />
+              <span className="text-sm font-medium">{toast.message}</span>
+            </div>
+          )}
+
+          {/* MOBILE MENU OVERLAY */}
+          {mobileMenuOpen && (
+            <div 
+              className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40 md:hidden"
+              onClick={() => setMobileMenuOpen(false)}
+            />
+          )}
+
+          {/* SIDEBAR */}
+          <aside className={`fixed md:static inset-y-0 left-0 z-50 w-72 bg-white border-r border-slate-200 flex flex-col justify-between transform transition-transform duration-300 ease-in-out ${
+            mobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+          }`}>
+            <div>
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-900 flex items-center justify-center text-white shadow-md">
+                    <Icon name="boxes" className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h1 className="font-bold text-slate-900 text-base leading-tight">INVENTO</h1>
+                    <p className="text-xs text-slate-500 font-medium">Stok Cloud Sync</p>
+                  </div>
+                </div>
+                <button 
+                  className="md:hidden text-slate-400 hover:text-slate-600"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  <Icon name="x" className="w-6 h-6" />
+                </button>
+              </div>
+
+              <nav className="p-4 space-y-1.5">
+                <NavItem id="dashboard" label="Dashboard" icon="l
